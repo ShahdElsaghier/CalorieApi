@@ -1,12 +1,5 @@
-jupyter
-ipywidgets
-numpy
-tensorflow
-matplotlib
-seaborn
-h5py
-sklearn
-keras
 flask
+flask-cors
+tensorflow
+numpy
 pillow
-gunicorn

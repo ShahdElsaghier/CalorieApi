@@ -4,21 +4,26 @@ import numpy as np
 import tensorflow as tf
 from flask import Flask, request, jsonify
 from tensorflow.keras.models import load_model
-from dotenv import load_dotenv
 from flask_cors import CORS
-from PIL import Image 
-
-load_dotenv()
+from PIL import Image
 
 # ================= SETUP =================
 app = Flask(__name__)
 CORS(app)
 
-# ================= LOAD MODEL =================
+# ================= MODEL LOAD =================
 tf.keras.backend.clear_session()
-model = load_model("food_model.h5", compile=False)
 
-# ================= FOOD LABELS =================
+MODEL_PATH = "food_model.h5"
+
+try:
+    model = load_model(MODEL_PATH, compile=False)
+    print("Model loaded successfully")
+except Exception as e:
+    print("Model loading error:", e)
+    model = None
+
+# ================= LABELS =================
 label = ['apple pie','baby back ribs','baklava','beef carpaccio','beef tartare',
 'beet salad','beignets','bibimbap','bread pudding','breakfast burrito',
 'bruschetta','caesar salad','cannoli','caprese salad','carrot cake','ceviche',
@@ -40,21 +45,28 @@ label = ['apple pie','baby back ribs','baklava','beef carpaccio','beef tartare',
 'strawberry shortcake','sushi','tacos','octopus balls','tiramisu',
 'tuna tartare','waffles']
 
-# ================= NUTRITION DATA =================
+# ================= NUTRITION =================
 nutrition_table = {}
 
-with open("nutrition101.csv", "r") as file:
-    reader = csv.reader(file)
-    next(reader)
-    for row in reader:
-        name = row[1].strip()
-        nutrition_table[name] = [
-            {"name": "protein", "value": float(row[2])},
-            {"name": "calcium", "value": float(row[3])},
-            {"name": "fat", "value": float(row[4])},
-            {"name": "carbohydrates", "value": float(row[5])},
-            {"name": "vitamins", "value": float(row[6])},
-        ]
+try:
+    with open("nutrition101.csv", "r") as file:
+        reader = csv.reader(file)
+        next(reader)
+
+        for row in reader:
+            name = row[1].strip()
+            nutrition_table[name] = [
+                {"name": "protein", "value": float(row[2])},
+                {"name": "calcium", "value": float(row[3])},
+                {"name": "fat", "value": float(row[4])},
+                {"name": "carbohydrates", "value": float(row[5])},
+                {"name": "vitamins", "value": float(row[6])},
+            ]
+
+    print("Nutrition data loaded successfully")
+
+except Exception as e:
+    print("Nutrition CSV error:", e)
 
 # ================= LOGIC =================
 def carb_status(value):
@@ -65,29 +77,33 @@ def carb_status(value):
     else:
         return "red", "Avoid"
 
-# ================= API =================
+# ================= ROUTE =================
 @app.route("/api/predict", methods=["POST"])
 def api_predict():
-    
+
     try:
-        print(request.files)  
-        
+        if model is None:
+            return jsonify({"success": False, "error": "Model not loaded"}), 500
+
         if "img" not in request.files:
             return jsonify({"success": False, "error": "No image uploaded"}), 400
 
         file = request.files["img"]
 
-       
+        # preprocess image
         img = Image.open(file).convert("RGB")
         img = img.resize((224, 224))
         img = np.array(img)
         img = np.expand_dims(img, axis=0) / 255.0
 
+        # prediction
         pred = model.predict(img)
 
         top = pred.argsort()[0][-3:]
-        best = label[top[2]]
+        best_index = top[2]
+        best = label[best_index]
 
+        # nutrition lookup
         nutrition = nutrition_table.get(best, [
             {"name": "protein", "value": 0},
             {"name": "calcium", "value": 0},
@@ -99,10 +115,12 @@ def api_predict():
         carbs = nutrition[3]["value"] if len(nutrition) > 3 else 0
         color, status = carb_status(carbs)
 
+        confidence = float(pred[0][best_index]) * 100
+
         return jsonify({
             "success": True,
             "food_name": best,
-            "confidence": float(pred[0][top[2]] * 100),
+            "confidence": round(confidence, 2),
             "carbs": carbs,
             "carb_status": status,
             "nutrition": nutrition,
@@ -112,6 +130,6 @@ def api_predict():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# ================= RUN =================
+# ================= RUN (HUGGING FACE SAFE) =================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=7860)
