@@ -1,0 +1,11 @@
+jupyter
+ipywidgets
+numpy
+tensorflow
+matplotlib
+seaborn
+h5py
+sklearn
+keras
+flask
+pillow
